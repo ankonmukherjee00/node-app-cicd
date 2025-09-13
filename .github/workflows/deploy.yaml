@@ -1,0 +1,93 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Environment to deploy to"
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - prod
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Check vulnerabilities with Trivy
+        id: trivy_scan
+        uses: aquasecurity/trivy-action@v0.6.0
+        with:
+          scan-type: fs
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          format: json
+          output: trivy-report.json
+        continue-on-error: true
+
+      - name: Fail if Trivy found high/critical vulnerabilities
+        if: steps.trivy_scan.outcome == 'failure'
+        run: |
+          echo "High or Critical vulnerabilities found by Trivy! Failing the workflow."
+          exit 1
+
+      - name: Check code with Checkov
+        id: checkov_scan
+        uses: bridgecrewio/checkov-action@v12.0.169
+        with:
+          directory: .
+          severity-threshold: HIGH,CRITICAL
+        continue-on-error: true
+
+      - name: Fail if Checkov found high/critical issues
+        if: steps.checkov_scan.outcome == 'failure'
+        run: |
+          echo "High or Critical issues found by Checkov! Failing the workflow."
+          exit 1
+
+      - name: Build and Push Docker image
+        env:
+          IMAGE_TAG: my-app:${{ github.sha }}
+          REPO: your-docker-repo/my-app
+          ENVIRONMENT: ${{ github.event.inputs.env }}
+        run: |
+          echo "Building Docker image with tag $IMAGE_TAG"
+          docker build -t $REPO:$IMAGE_TAG .
+          docker push $REPO:$IMAGE_TAG
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Update image tag in task-definition.json
+        env:
+          IMAGE_TAG: my-app:${{ github.sha }}
+          APP_NAME: ${{ vars.app }}            
+          MONGO_URI: ${{ secrets.mongouri }}  
+          ENVIRONMENT: ${{ github.event.inputs.env }}
+        run: |
+          echo "Replacing image tag in task-definition.json"
+          sed -i "s|\"image\": \".*\"|\"image\": \"$REPO:$IMAGE_TAG\"|" task-definition.json
+
+          echo "Generating environment variables file"
+          find ./backend -type f -name '*.env' -exec cat {} + | envsubst > temp.env
+
+      - name: Deploy to ECS
+        env:
+          AWS_DEFAULT_REGION: us-west-2  
+        run: |
+          aws ecs update-service \
+            --cluster your-cluster-name \
+            --service your-service-name \
+            --force-new-deployment
+
+          aws ecs register-task-definition \
+            --cli-input-json file://task-definition.json
+
+      
