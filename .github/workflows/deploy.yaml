@@ -25,7 +25,7 @@ jobs:
 
       - name: Check vulnerabilities with Trivy
         id: trivy_scan
-        uses: aquasecurity/trivy-action@v0.22.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           vuln-type: os,library
