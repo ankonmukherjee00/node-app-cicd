@@ -25,7 +25,7 @@ jobs:
 
       - name: Check vulnerabilities with Trivy
         id: trivy_scan
-        uses: aquasecurity/trivy-action@v0.6.0
+        uses: aquasecurity/trivy-action@v0.22.0
         with:
           scan-type: fs
           vuln-type: os,library
@@ -42,7 +42,7 @@ jobs:
 
       - name: Check code with Checkov
         id: checkov_scan
-        uses: bridgecrewio/checkov-action@v12.0.169
+        uses: bridgecrewio/checkov-action@v2
         with:
           directory: .
           severity-threshold: HIGH,CRITICAL
